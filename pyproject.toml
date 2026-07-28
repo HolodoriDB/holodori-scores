@@ -3,12 +3,12 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta:__legacy__"
 
 [project]
-name = "sekaiworld.scores"
+name = "holodori.scores"
 description = "Render holodori scores (sus) to chart images (png)."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
-authors = [{ name = "Sekai World", email = "dev@sekai.best" }]
+authors = [{ name = "HolodoriDB" }]
 keywords = ["hololive Dreams", "holodori", "SUS"]
 classifiers = [
     "Programming Language :: Python :: 3",
