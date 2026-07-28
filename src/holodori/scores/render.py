@@ -31,11 +31,11 @@ from sonolus_converters.notes.slide import (
 )
 from sonolus_converters.notes.timescale import TimeScaleGroup
 
-__all__ = ["ChartRenderer", "render_score", "load_sus", "load_pjsk"]
+__all__ = ["ChartRenderer", "render_score", "load_sus"]
 
 _ASSETS = Path(__file__).parent / "assets"
-_FONT_MEDIUM = _ASSETS / "NotoSansCJKEx-Medium.otf"
-_FONT_BLACK = _ASSETS / "NotoSansCJKEx-Black.otf"
+_FONT_MEDIUM = _ASSETS / "NotoSansCJKEx-Medium.otf"  # TODO: replace? if applicable
+_FONT_BLACK = _ASSETS / "NotoSansCJKEx-Black.otf"  # TODO: replace? if applicable
 
 LANE_WIDTH = 16
 TIME_HEIGHT = 360
@@ -223,22 +223,14 @@ def _read_text(source: _Source) -> str:
 
 
 def load_sus(file: _Source) -> tuple[Score, list[tuple[int, float]]]:
+    """
+    Only supports holodori-style sus files
+    """
     import sonolus_converters
 
     text = _read_text(file)
-    score = sonolus_converters.sus.load(io.StringIO(text))
+    score = sonolus_converters.holodori_sus.load(io.StringIO(text))
     return score, _parse_bar_lengths(text)
-
-
-def load_pjsk(file: _Source) -> tuple[Score, list[tuple[int, float]]]:
-    import sonolus_converters
-
-    # pjsk.load takes PathLike | IO[bytes] | bytes | str; collapse any file-like
-    # to its contents so StringIO/BytesIO work too — all in memory.
-    if not isinstance(file, (str, Path, bytes)):
-        file = file.read()
-    score = sonolus_converters.pjsk.load(file)
-    return score, [(0, 4.0)]
 
 
 def _row1(y: int) -> int:
@@ -479,7 +471,7 @@ class ChartRenderer:
         try:
             if source.startswith(("http://", "https://")):
                 request = urllib.request.Request(
-                    source, headers={"User-Agent": "pjsekai-scores"}
+                    source, headers={"User-Agent": "holodori-scores"}
                 )
                 with urllib.request.urlopen(request, timeout=15) as response:
                     image = Image.open(io.BytesIO(response.read())).convert("RGBA")
@@ -895,12 +887,12 @@ class ChartRenderer:
             filter(
                 None,
                 [
-                    self.difficulty and str(self.difficulty).upper(),
+                    self.difficulty and str(self.difficulty),
                     self.playlevel,
-                    "Chart drawn by sbuga.com",
+                    "chart drawn by holodori.best",
                 ],
             )
-        )
+        ).capitalize()
         self._draw_text(
             canvas,
             draw,

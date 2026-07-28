@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta:__legacy__"
 
 [project]
 name = "sekaiworld.scores"
-description = "Render Project Sekai scores (sus / pjsk json) to chart images (png). Powered by pjsekai/scores."
+description = "Render holodori scores (sus) to chart images (png)."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
 authors = [{ name = "Sekai World", email = "dev@sekai.best" }]
-keywords = ["Project Sekai", "pjsekai", "SUS"]
+keywords = ["hololive Dreams", "holodori", "SUS"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -30,9 +30,9 @@ dev = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/Sekai-World/pjsekai-scores"
-"Documentation" = "https://github.com/Sekai-World/pjsekai-scores/wiki"
-"Bug Tracker" = "https://github.com/Sekai-World/pjsekai-scores/issues"
+"Homepage" = "https://github.com/HolodoriDB/holodori-scores"
+"Documentation" = "https://github.com/HolodoriDB/holodori-scores/wiki"
+"Bug Tracker" = "https://github.com/HolodoriDB/holodori-scores/issues"
 
 [tool.setuptools.package-data]
 "*" = ["*.png", "*.otf"]

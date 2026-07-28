@@ -1,14 +1,12 @@
 import argparse
 import os
 
-from .render import ChartRenderer, load_pjsk, load_sus
+from .render import ChartRenderer, load_sus
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "score", metavar="<xxx.sus|xxx.json>", help="the pjsekai score file"
-    )
+    parser.add_argument("score", metavar="<xxx.sus>", help="the holodori score file")
     parser.add_argument("--title")
     parser.add_argument("--artist")
     parser.add_argument("--difficulty")
@@ -24,10 +22,7 @@ def main() -> None:
             output, os.path.splitext(os.path.basename(input_path))[0] + ".png"
         )
 
-    if input_path.lower().endswith(".json"):
-        score, bar_lengths = load_pjsk(input_path)
-    else:
-        score, bar_lengths = load_sus(input_path)
+    score, bar_lengths = load_sus(input_path)
     renderer = ChartRenderer(
         score,
         title=args.title,
