@@ -34,8 +34,8 @@ from sonolus_converters.notes.timescale import TimeScaleGroup
 __all__ = ["ChartRenderer", "render_score", "load_sus"]
 
 _ASSETS = Path(__file__).parent / "assets"
-_FONT_MEDIUM = _ASSETS / "NotoSansCJKEx-Medium.otf"  # TODO: replace? if applicable
-_FONT_BLACK = _ASSETS / "NotoSansCJKEx-Black.otf"  # TODO: replace? if applicable
+_FONT_MEDIUM = _ASSETS / "NotoSansCJKEx-Medium.otf"
+_FONT_BLACK = _ASSETS / "NotoSansCJKEx-Black.otf"
 
 LANE_WIDTH = 16
 TIME_HEIGHT = 360
@@ -51,16 +51,32 @@ N_LANES = 12
 SENTENCE_LENGTH = 4
 
 WHITE = (255, 255, 255, 255)
-LIGHT = (226, 226, 226, 255)
+# holodori blue theme: light-blue background, blue-gray lane, blue lane lines, dark-blue meta bar
+LIGHT = (70, 120, 208, 255)
 YELLOW = (254, 227, 0, 255)
 MAGENTA = (255, 51, 255, 255)
 SLIDE_FILL = (201, 252, 226, 204)
 SLIDE_CRITICAL_FILL = (252, 241, 195, 204)
 DECORATION_STOPS = ((201, 252, 226, 153), (201, 252, 226, 51))
 DECORATION_CRITICAL_STOPS = ((252, 241, 195, 153), (252, 241, 195, 51))
-LANE_FILL = (76, 77, 80, 128)
-BACKGROUND_FILL = (158, 158, 158, 179)
-META_FILL = (0, 0, 0, 255)
+LANE_FILL = (118, 136, 170, 165)
+BACKGROUND_FILL = (210, 229, 247, 255)
+META_FILL = (24, 38, 90, 255)
+
+# a holodori note is a bar with a fixed end-cap triangle at each side and the staircase cover icon
+# centered; the flat middle stretches to the note width (caps and icon stay fixed-size)
+NOTE_TEX = {
+    "normal": "note_normal.png",
+    "critical": "note_critical.png",
+    "flick": "note_flick.png",
+    "long": "note_long.png",
+}
+NOTE_TILE_H = round(LANE_WIDTH / 64 * 56 * 1.7)
+NOTE_CAP_FRAC = 0.44
+NOTE_ICON = "note_icon.png"
+NOTE_ICON_FRAC = 0.5
+# small overhang (lanes, total) so the glow margin spills over and the solid bar fills the lanes
+NOTE_WIDTH_PAD = 0.25
 
 
 @dataclasses.dataclass
@@ -238,6 +254,8 @@ def _row1(y: int) -> int:
 
 
 _SPRITE_CACHE: dict[str, Image.Image | None] = {}
+_COVER_ICON_CACHE: dict[str, "tuple[Image.Image, float, float] | None"] = {}
+_RELAY_CACHE: dict[str, "tuple[Image.Image, float, float] | None"] = {}
 _SCALED_CACHE: dict[tuple, Image.Image | None] = {}
 _NOTE_TILE_CACHE: dict[tuple, Image.Image | None] = {}
 _FONT_CACHE: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
@@ -533,70 +551,87 @@ class ChartRenderer:
 
     # --- note body tiles --------------------------------------------------------
 
-    def _note_tile(self, sprite_no: int, width_units: int) -> Image.Image | None:
-        key = (sprite_no, width_units)
+    def _note_tile(self, kind: str, width_units: int) -> Image.Image | None:
+        key = (kind, width_units)
         if key in _NOTE_TILE_CACHE:
             return _NOTE_TILE_CACHE[key]
-        if not 1 <= width_units <= N_LANES:
+        tex = self._sprite(NOTE_TEX.get(kind, NOTE_TEX["normal"]))
+        if tex is None or not 1 <= width_units <= N_LANES:
             _NOTE_TILE_CACHE[key] = None
             return None
 
-        tile_w = LANE_WIDTH * (width_units + 1)
-        tile_h = round(LANE_WIDTH / 64 * 56 * 2)
-        dy = (tile_h - NOTE_SIZE) / 2
+        tile_w = round(LANE_WIDTH * (width_units + NOTE_WIDTH_PAD))
+        tile_h = NOTE_TILE_H
+        scale = tile_h / tex.height
+        cap_src = max(1, round(tex.width * NOTE_CAP_FRAC))
+        cap_w = min(max(1, round(cap_src * scale)), tile_w // 2)
+        mid_w = max(1, tile_w - 2 * cap_w)
 
-        cap = NOTE_SIZE / 56 * 32
-        middle = LANE_WIDTH * width_units - cap - 2
-        pad = (tile_w - cap - middle - cap) / 2
+        def part(box: tuple[int, int, int, int], w: int) -> Image.Image:
+            return tex.crop(box).resize((w, tile_h), Image.Resampling.LANCZOS)
 
-        sprite_w = round(118 * 32 / 112)
-        sprite_h = round(62 * 16 / 56)
-        sprite_dx = -3 * 32 / 112
-        sprite_dy = -3 * 16 / 56
-
+        # end-cap triangles (fixed) + stretched flat middle
         canvas = Image.new("RGBA", (tile_w, tile_h))
-
-        def paint(image_name: str, x: float, w: int, clip: tuple[float, float]) -> None:
-            image = self._scaled_image(image_name, w, sprite_h)
-            if image is None:
-                return
-            layer = Image.new("RGBA", canvas.size)
-            layer.paste(image, (round(x), round(dy + sprite_dy)))
-            mask = Image.new("L", canvas.size, 0)
-            ImageDraw.Draw(mask).rectangle(
-                [
-                    round(clip[0]),
-                    round(dy),
-                    round(clip[1]) - 1,
-                    round(dy + NOTE_SIZE) - 1,
-                ],
-                fill=255,
-            )
-            layer.putalpha(
-                Image.composite(
-                    layer.getchannel("A"), Image.new("L", canvas.size, 0), mask
-                )
-            )
-            canvas.alpha_composite(layer)
-
-        sprite_name = f"notes_{sprite_no}.png"
-        strip_name = f"notes_{sprite_no}_middle.png"
-        paint(sprite_name, pad + sprite_dx, sprite_w, (pad, pad + cap))
-        paint(
-            strip_name,
-            pad + cap,
-            max(1, round(middle)),
-            (pad + cap, pad + cap + middle),
+        canvas.alpha_composite(part((0, 0, cap_src, tex.height), cap_w), (0, 0))
+        canvas.alpha_composite(
+            part((cap_src, 0, tex.width - cap_src, tex.height), mid_w), (cap_w, 0)
         )
-        paint(
-            sprite_name,
-            pad + cap + middle + cap - 32 + sprite_dx,
-            sprite_w,
-            (pad + cap + middle, pad + cap + middle + cap),
+        canvas.alpha_composite(
+            part((tex.width - cap_src, 0, tex.width, tex.height), cap_w),
+            (cap_w + mid_w, 0),
         )
-
+        # cover icon placed so its visual centroid sits at the note center (the staircase is
+        # top-left heavy, so centering its bounding box would look shifted left)
+        cover = self._cover_icon()
+        if cover is not None:
+            icon, cxf, cyf = cover
+            ih = max(1, round(tile_h * NOTE_ICON_FRAC))
+            iw = max(1, round(icon.width * ih / icon.height))
+            scaled = icon.resize((iw, ih), Image.Resampling.LANCZOS)
+            canvas.alpha_composite(
+                scaled, (round(tile_w / 2 - cxf * iw), round(tile_h / 2 - cyf * ih))
+            )
         _NOTE_TILE_CACHE[key] = canvas
         return canvas
+
+    def _relay_tick(self, critical: bool) -> "tuple[Image.Image, float, float] | None":
+        name = "note_long_relay_critical.png" if critical else "note_long_relay.png"
+        if name in _RELAY_CACHE:
+            return _RELAY_CACHE[name]
+        image, _, _ = self._fit_image(name, round(LANE_WIDTH), round(LANE_WIDTH))
+        result: tuple[Image.Image, float, float] | None = None
+        if image is not None:
+            a = np.asarray(image)[:, :, 3].astype(np.float64)
+            total = a.sum()
+            if total > 0:
+                yy, xx = np.mgrid[0 : image.height, 0 : image.width]
+                result = (
+                    image,
+                    float((xx * a).sum() / total / image.width),
+                    float((yy * a).sum() / total / image.height),
+                )
+        _RELAY_CACHE[name] = result
+        return result
+
+    def _cover_icon(self) -> "tuple[Image.Image, float, float] | None":
+        if NOTE_ICON in _COVER_ICON_CACHE:
+            return _COVER_ICON_CACHE[NOTE_ICON]
+        icon = self._sprite(NOTE_ICON)
+        result: tuple[Image.Image, float, float] | None = None
+        if icon is not None:
+            arr = np.asarray(icon)
+            bright = (arr[:, :, :3].min(axis=2) > 170) & (arr[:, :, 3] > 150)
+            ys, xs = np.where(bright)
+            if len(xs):
+                x0, y0 = int(xs.min()), int(ys.min())
+                crop = icon.crop((x0, y0, int(xs.max()) + 1, int(ys.max()) + 1))
+                result = (
+                    crop,
+                    (xs.mean() - x0) / crop.width,
+                    (ys.mean() - y0) / crop.height,
+                )
+        _COVER_ICON_CACHE[NOTE_ICON] = result
+        return result
 
     # --- ribbon fills -------------------------------------------------------------
 
@@ -1006,7 +1041,7 @@ class ChartRenderer:
                 )
 
             y = round(bar_y(event.bar))
-            flag = YELLOW if event.special else WHITE
+            flag = YELLOW if event.special else LIGHT
             draw.rectangle([0, y - 2, LANE_PADDING - 1, y + 1], fill=flag)
 
         for event in merged:
@@ -1030,7 +1065,7 @@ class ChartRenderer:
                 round(y - LANE_WIDTH * 1.5),
                 size=12,
                 weight=900,
-                fill=YELLOW if event.special else WHITE,
+                fill=YELLOW if event.special else LIGHT,
                 spacing=4 if event.special else 0,
                 rotate=(LANE_PADDING, round(y)),
             )
@@ -1139,35 +1174,18 @@ class ChartRenderer:
         lower = bar_start - 1
         upper = bar_stop + 1
 
-        bodies: list[tuple[float, float, float, int]] = []
-        frictions: list[tuple[float, float, float, str]] = []
+        bodies: list[tuple[float, float, float, str]] = []
         flicks: list[tuple[float, float, float, str, bool]] = []
-
-        def friction_name(critical: bool, flick: bool) -> str:
-            if critical:
-                return "notes_friction_among_crtcl.png"
-            return (
-                "notes_friction_among_flick.png"
-                if flick
-                else "notes_friction_among_long.png"
-            )
 
         for single in self.singles:
             if not lower <= single.beat < upper:
                 continue
-            if single.trace:
-                sprite = 5 if single.critical else 6 if single.direction else 4
-                frictions.append(
-                    (
-                        single.beat,
-                        single.lane,
-                        single.width,
-                        friction_name(single.critical, bool(single.direction)),
-                    )
-                )
-            else:
-                sprite = 0 if single.critical else 3 if single.direction else 2
-            bodies.append((single.beat, single.lane, single.width, sprite))
+            kind = (
+                "critical"
+                if single.critical
+                else "flick" if single.direction else "normal"
+            )
+            bodies.append((single.beat, single.lane, single.width, kind))
             if single.direction:
                 flicks.append(
                     (
@@ -1190,55 +1208,36 @@ class ChartRenderer:
                 if point.judge == "none":
                     continue
                 critical = point.critical or chain.critical
-                if point.judge == "trace":
-                    sprite = 5 if critical else 4
-                    frictions.append(
-                        (
-                            point.beat,
-                            point.lane,
-                            point.width,
-                            friction_name(critical, False),
-                        )
-                    )
-                elif critical:
-                    sprite = 0
+                if critical:
+                    kind = "critical"
                 elif point.kind == "end" and point.direction:
-                    sprite = 3
+                    kind = "flick"
                 else:
-                    sprite = 1
-                bodies.append((point.beat, point.lane, point.width, sprite))
+                    kind = "long"
+                bodies.append((point.beat, point.lane, point.width, kind))
                 if point.kind == "end" and point.direction:
                     flicks.append(
                         (point.beat, point.lane, point.width, point.direction, critical)
                     )
 
+        # relay ticks first so the note bodies sit on top of them; centered by the tick's centroid
+        # (the sprite's disc is offset from its bounding box by an asymmetric glow)
+        for x, y, critical in amongs:
+            relay = self._relay_tick(critical)
+            if relay is not None:
+                image, cxf, cyf = relay
+                canvas.alpha_composite(
+                    image, (round(x - cxf * image.width), round(y - cyf * image.height))
+                )
+
         bodies.sort(key=lambda b: b[0])
-        h = LANE_WIDTH / 64 * 56 * 2
-        for beat, lane, note_width, sprite in bodies:
+        h = NOTE_TILE_H
+        for beat, lane, note_width, kind in bodies:
             y = bar_y(beat)
-            x = LANE_WIDTH * (lane - 2.5) + LANE_PADDING
-            tile = self._note_tile(sprite, round(note_width))
+            x = LANE_WIDTH * (lane - 2 - NOTE_WIDTH_PAD / 2) + LANE_PADDING
+            tile = self._note_tile(kind, round(note_width))
             if tile is not None:
                 canvas.alpha_composite(tile, (round(x), round(y - h / 2)))
-
-        for x, y, critical in amongs:
-            w = LANE_WIDTH
-            name = "notes_long_among_crtcl.png" if critical else "notes_long_among.png"
-            image, off_x, off_y = self._fit_image(name, round(w), round(w))
-            if image is not None:
-                canvas.alpha_composite(
-                    image, (round(x - w / 2 + off_x), round(y - w / 2 + off_y))
-                )
-
-        for beat, lane, note_width, name in frictions:
-            y = bar_y(beat)
-            x = LANE_WIDTH * (lane + note_width / 2 - 2) + LANE_PADDING
-            w = LANE_WIDTH * 0.75
-            image, off_x, off_y = self._fit_image(name, round(w), round(w))
-            if image is not None:
-                canvas.alpha_composite(
-                    image, (round(x - w / 2 + off_x), round(y - w / 2 + off_y))
-                )
 
         flicks.sort(key=lambda f: f[0])
         for beat, lane, note_width, direction, critical in reversed(flicks):
@@ -1247,31 +1246,27 @@ class ChartRenderer:
             arrow_h = h0 * ((width_units + 3) / 3) ** 0.75
             arrow_w = h0 * 1.5 * ((width_units + 0.5) / 3) ** 0.75
             x = LANE_WIDTH * (lane - 2 + note_width / 2) + LANE_PADDING
-            bias = (
-                -NOTE_SIZE / 4
-                if direction == "left"
-                else NOTE_SIZE / 4 if direction == "right" else 0
-            )
-            diagonal = direction in ("left", "right")
-            name = "notes_flick_arrow%s_0%d%s.png" % (
-                "_crtcl" if critical else "",
-                width_units,
-                "_diagonal" if diagonal else "",
-            )
-            image, off_x, off_y = self._fit_image(
-                name, round(arrow_w), round(arrow_h), flip=direction == "right"
-            )
+            size = "s" if width_units <= 2 else "m" if width_units <= 4 else "l"
+            name = "flick_arrow_%s%s.png" % ("critical_" if critical else "", size)
+            image, off_x, off_y = self._fit_image(name, round(arrow_w), round(arrow_h))
             if image is None:
                 continue
             y = bar_y(beat)
-            dest_x = round(x - arrow_w / 2 + bias)
-            if direction == "right":
-                origin = round(x + bias)
-                dest_x = 2 * origin - (dest_x + round(arrow_w))
-            canvas.alpha_composite(
-                image,
-                (round(dest_x + off_x), round(y + NOTE_SIZE / 4 - arrow_h + off_y)),
-            )
+            if direction in ("left", "right"):
+                angle = 35 if direction == "left" else -35
+                image = image.rotate(
+                    angle, expand=True, resample=Image.Resampling.BICUBIC
+                )
+                dest = (
+                    round(x - image.width / 2),
+                    round(y + NOTE_SIZE / 4 - image.height),
+                )
+            else:
+                dest = (
+                    round(x - arrow_w / 2 + off_x),
+                    round(y + NOTE_SIZE / 4 - arrow_h + off_y),
+                )
+            canvas.alpha_composite(image, dest)
 
     def _draw_ticks(
         self,
