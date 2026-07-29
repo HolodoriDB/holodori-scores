@@ -73,6 +73,7 @@ NOTE_TEX = {
     "critical": "note_critical.png",
     "flick": "note_flick.png",
     "long": "note_long.png",
+    "gray": "note_gray.png",  # normal taps that don't land on the 8th-note grid
 }
 NOTE_TILE_H = round(LANE_WIDTH / 64 * 56 * 1.7)
 NOTE_CAP_FRAC = 0.44
@@ -109,6 +110,12 @@ class _Single:
     critical: bool
     trace: bool
     direction: str | None
+    offbeat: bool = False  # note does not land on the 8th-note grid
+
+
+def _is_offbeat(beat: float) -> bool:
+    eighths = beat * 2
+    return abs(eighths - round(eighths)) > 1e-4
 
 
 @dataclasses.dataclass
@@ -319,6 +326,7 @@ class ChartRenderer:
         jacket: str | None = None,
         chart_id: str | None = None,
         time_based: bool = False,
+        gray_offbeat: bool = True,
         bar_lengths: list[tuple[int, float]] | None = None,
     ):
         self.title = title if title is not None else score.metadata.title
@@ -328,6 +336,7 @@ class ChartRenderer:
         self.jacket = jacket
         self.chart_id = chart_id
         self.time_based = time_based
+        self.gray_offbeat = gray_offbeat
 
         self._images: dict[str, Image.Image | None] = {}
         self._text_tiles: dict[tuple, tuple[Image.Image, int, int, float, int, int]] = (
@@ -364,6 +373,7 @@ class ChartRenderer:
                         critical=bool(note.critical),
                         trace=bool(note.trace),
                         direction=note.direction,
+                        offbeat=_is_offbeat(note.beat),
                     )
                 )
             elif isinstance(note, Slide):
@@ -1188,6 +1198,8 @@ class ChartRenderer:
                 if single.critical
                 else "flick" if single.direction else "normal"
             )
+            if kind == "normal" and self.gray_offbeat and single.offbeat:
+                kind = "gray"
             bodies.append((single.beat, single.lane, single.width, kind))
             if single.direction:
                 flicks.append(
