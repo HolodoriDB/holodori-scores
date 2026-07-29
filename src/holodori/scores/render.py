@@ -38,7 +38,10 @@ _FONT_MEDIUM = _ASSETS / "NotoSansCJKEx-Medium.otf"
 _FONT_BLACK = _ASSETS / "NotoSansCJKEx-Black.otf"
 
 LANE_WIDTH = 16
-TIME_HEIGHT = 360
+MEASURE_HEIGHT = (
+    440  # px per measure (default uniform layout: every measure is the same height)
+)
+TIME_HEIGHT = 360  # px per second (time_based layout: measure height scales with tempo)
 NOTE_SIZE = 16
 FLICK_HEIGHT = 24
 LANE_PADDING = 40
@@ -315,6 +318,7 @@ class ChartRenderer:
         playlevel: str | None = None,
         jacket: str | None = None,
         chart_id: str | None = None,
+        time_based: bool = False,
         bar_lengths: list[tuple[int, float]] | None = None,
     ):
         self.title = title if title is not None else score.metadata.title
@@ -323,6 +327,7 @@ class ChartRenderer:
         self.playlevel = playlevel
         self.jacket = jacket
         self.chart_id = chart_id
+        self.time_based = time_based
 
         self._images: dict[str, Image.Image | None] = {}
         self._text_tiles: dict[tuple, tuple[Image.Image, int, int, float, int, int]] = (
@@ -836,24 +841,25 @@ class ChartRenderer:
             last = max(last, chain.points[-1].beat)
         return math.ceil(last)
 
+    def _pos(self, bar: float) -> float:
+        # cumulative vertical position (px) of a bar boundary
+        if self.time_based:
+            return TIME_HEIGHT * self.timeline.time_of_bar(bar)
+        return MEASURE_HEIGHT * bar
+
     def render(self) -> Image.Image:
         if not self.singles and not self.chains:
             return Image.new("RGB", (1, 1), (255, 255, 255))
 
         n_bars = self._n_bars()
-        ranges: list[tuple[int, int]] = []
-        bar = 0
-        for i in range(n_bars + 1):
-            if bar != i and (i == bar + SENTENCE_LENGTH or i == n_bars):
-                ranges.append((bar, i))
-                bar = i
+        # full-width columns; the last is padded with empty measures if the chart ends mid-column
+        n_cols = max(1, math.ceil(n_bars / SENTENCE_LENGTH))
+        ranges = [
+            (i * SENTENCE_LENGTH, (i + 1) * SENTENCE_LENGTH) for i in range(n_cols)
+        ]
 
         heights = [
-            round(
-                TIME_HEIGHT
-                * (self.timeline.time_of_bar(stop) - self.timeline.time_of_bar(start))
-                + TIME_PADDING * 2
-            )
+            round(self._pos(stop) - self._pos(start) + TIME_PADDING * 2)
             for start, stop in ranges
         ]
         sentence_w = round(LANE_WIDTH * N_LANES + LANE_PADDING * 2)
@@ -960,13 +966,10 @@ class ChartRenderer:
     ) -> Image.Image:
         canvas = Image.new("RGBA", (width, height))
         draw = ImageDraw.Draw(canvas, "RGBA")
-        stop_time = self.timeline.time_of_bar(bar_stop)
+        stop_pos = self._pos(bar_stop)
 
         def bar_y(bar: float) -> float:
-            return (
-                TIME_HEIGHT * (stop_time - self.timeline.time_of_bar(bar))
-                + TIME_PADDING
-            )
+            return stop_pos - self._pos(bar) + TIME_PADDING
 
         draw.rectangle([0, 0, width - 1, height - 1], fill=BACKGROUND_FILL)
         draw.rectangle(
