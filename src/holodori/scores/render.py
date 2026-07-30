@@ -21,6 +21,13 @@ from PIL import Image, ImageDraw, ImageFont
 
 from sonolus_converters.notes.bpm import Bpm
 from sonolus_converters.notes.guide import Guide
+from sonolus_converters.notes.holodorievents import (
+    HolodoriChargeEnd,
+    HolodoriChargeStart,
+    HolodoriFeverEnd,
+    HolodoriFeverStart,
+    HolodoriSkill,
+)
 from sonolus_converters.notes.score import Score
 from sonolus_converters.notes.single import FeverChance, FeverStart, Single, Skill
 from sonolus_converters.notes.slide import (
@@ -56,7 +63,8 @@ SENTENCE_LENGTH = 4
 WHITE = (255, 255, 255, 255)
 # holodori blue theme: light-blue background, blue-gray lane, blue lane lines, dark-blue meta bar
 LIGHT = (70, 120, 208, 255)
-YELLOW = (254, 227, 0, 255)
+YELLOW = (166, 124, 0, 255)
+RED = (198, 32, 48, 255)
 MAGENTA = (255, 51, 255, 255)
 SLIDE_FILL = (201, 252, 226, 204)
 SLIDE_CRITICAL_FILL = (252, 241, 195, 204)
@@ -75,6 +83,28 @@ NOTE_TEX = {
     "long": "note_long.png",
     "gray": "note_gray.png",  # normal taps that don't land on the 8th-note grid
 }
+# holodori marks both ends of the charge and fever windows; the sekai types are also accepted
+_EVENT_LABELS = {
+    HolodoriChargeStart.type: "FEVER CHARGE START",
+    HolodoriChargeEnd.type: "FEVER CHARGE END",
+    HolodoriFeverStart.type: "FEVER START",
+    HolodoriFeverEnd.type: "FEVER END",
+    Skill.type: "SKILL",
+    FeverChance.type: "FEVER CHANCE!",
+    FeverStart.type: "SUPER FEVER!!",
+}
+_EVENT_TYPES = (
+    HolodoriChargeStart,
+    HolodoriChargeEnd,
+    HolodoriFeverStart,
+    HolodoriFeverEnd,
+    Skill,
+    FeverChance,
+    FeverStart,
+)
+
+_APOSTROPHES = str.maketrans({"‘": "'", "’": "'", "＇": "'"})
+
 NOTE_TILE_H = round(LANE_WIDTH / 64 * 56 * 1.7)
 NOTE_CAP_FRAC = 0.44
 NOTE_ICON = "note_icon.png"
@@ -358,12 +388,10 @@ class ChartRenderer:
                     if point.timeScale != previous:
                         speeds.append((point.beat, point.timeScale))
                         previous = point.timeScale
-            elif isinstance(note, Skill):
-                texts.append((note.beat, "SKILL"))
-            elif isinstance(note, FeverChance):
-                texts.append((note.beat, "FEVER CHANCE!"))
-            elif isinstance(note, FeverStart):
-                texts.append((note.beat, "SUPER FEVER!!"))
+            elif isinstance(note, HolodoriSkill):
+                texts.append((note.beat, "SPECIAL SKILL %d" % note.slot))
+            elif isinstance(note, _EVENT_TYPES):
+                texts.append((note.beat, _EVENT_LABELS[note.type]))
             elif isinstance(note, Single):
                 self.singles.append(
                     _Single(
@@ -556,6 +584,12 @@ class ChartRenderer:
         draw_h = max(1, round(source.height * scale))
         image = self._scaled_image(name, draw_w, draw_h, flip)
         return image, (box_w - draw_w) / 2, (box_h - draw_h) / 2
+
+    def _text_length(self, text: str, size: int, weight: int, spacing: float) -> float:
+        font = self._font(size, weight)
+        if spacing:
+            return sum(font.getlength(c) + spacing for c in text)
+        return font.getlength(text)
 
     def _font(self, size: int, weight: int) -> ImageFont.FreeTypeFont:
         file = str(_FONT_BLACK if weight >= 900 else _FONT_MEDIUM)
@@ -785,6 +819,7 @@ class ChartRenderer:
     ) -> None:
         if not text:
             return
+        text = text.translate(_APOSTROPHES)
         font = self._font(size, weight)
         pil_anchor = {"start": "ls", "middle": "ms", "end": "rs"}[anchor]
 
@@ -1039,7 +1074,12 @@ class ChartRenderer:
                     fill=MAGENTA,
                     anchor="end",
                 )
-                continue
+                if (
+                    event.bpm is None
+                    and event.bar_length is None
+                    and event.text is None
+                ):
+                    continue
 
             if merged and event.bar - merged[-1].bar <= 1 / 16:
                 merged[-1].merge(event)
@@ -1054,7 +1094,10 @@ class ChartRenderer:
                 )
 
             y = round(bar_y(event.bar))
-            flag = YELLOW if event.special else LIGHT
+            if event.text:
+                flag = RED
+            else:
+                flag = YELLOW if event.special else LIGHT
             draw.rectangle([0, y - 2, LANE_PADDING - 1, y + 1], fill=flag)
 
         for event in merged:
@@ -1064,22 +1107,40 @@ class ChartRenderer:
                 "#%g" % event.bar if int(event.bar) == event.bar else None,
                 "%g BPM" % event.bpm if event.bpm else None,
                 "%g/4" % event.bar_length if event.bar_length else None,
-                event.text,
             ]
-            text = ", ".join(p for p in pieces if p)
-            if not text:
+            head = ", ".join(p for p in pieces if p)
+            if head and event.text:
+                head += ", "
+            if not head and not event.text:
                 continue
             y = bar_y(event.bar)
+            top = round(y - LANE_WIDTH * 1.5)
+            spacing = 4 if event.special else 0
+            x = LANE_PADDING + 8.0
+            if head:
+                self._draw_text(
+                    canvas,
+                    draw,
+                    head,
+                    x,
+                    top,
+                    size=12,
+                    weight=900,
+                    fill=YELLOW if event.special else LIGHT,
+                    spacing=spacing,
+                    rotate=(LANE_PADDING, round(y)),
+                )
+                x += self._text_length(head, 12, 900, spacing)
             self._draw_text(
                 canvas,
                 draw,
-                text,
-                LANE_PADDING + 8,
-                round(y - LANE_WIDTH * 1.5),
+                event.text or "",
+                x,
+                top,
                 size=12,
                 weight=900,
-                fill=YELLOW if event.special else LIGHT,
-                spacing=4 if event.special else 0,
+                fill=RED,
+                spacing=spacing,
                 rotate=(LANE_PADDING, round(y)),
             )
 
