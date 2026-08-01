@@ -45,15 +45,21 @@ def _note_list(score: Score, timeline: _Timeline) -> list[tuple[str, float]]:
     )
 
 
+def _singular(typ: str) -> str:
+    # store note types singular ("tap", "critical_long_end"); combo_events yields plural
+    return typ[:-1] if typ.endswith("s") else typ
+
+
 def chart_metadata(
     score: Score, bar_lengths: list[tuple[int, float]]
 ) -> dict[str, Any]:
-    # note list (type + time) + skill fire times drive the calculation; counts/combo are all
-    # derivable from these, so nothing is precomputed. two notes on the same tick no longer
-    # confuse combo-based windows, since scoring keys off exact per-note times.
+    # note list (type + time), skill fire times, and the fever window drive the calculation;
+    # counts/combo are all derivable from the note list, so nothing else is precomputed. two
+    # notes on the same tick no longer confuse combo windows, since scoring keys off times.
     timeline = _timeline(score, bar_lengths)
     notes = _note_list(score, timeline)
     combo_beats = sorted(beat for _cat, _crit, beat in score.combo_events())
+    fever = _fever_window(score)
 
     skills = [
         {
@@ -66,7 +72,18 @@ def chart_metadata(
         if type(note).__name__ == "HolodoriSkill"
     ]
 
-    return {"notes": [[typ, round(t, 6)] for typ, t in notes], "skills": skills}
+    return {
+        "notes": [[_singular(typ), round(t, 6)] for typ, t in notes],
+        "skills": skills,
+        "fever": (
+            {
+                "start": round(timeline.time(fever[0]), 6),
+                "end": round(timeline.time(fever[1]), 6),
+            }
+            if fever
+            else None
+        ),
+    }
 
 
 def notes_coefficient(counts: dict[str, int], weights: dict[str, int]) -> float:
