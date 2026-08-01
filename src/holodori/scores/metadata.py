@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import bisect
 from typing import Any
 
 from sonolus_converters.notes.score import Score
@@ -69,6 +70,8 @@ def chart_metadata(
         else {k: 0 for k in _KEYS}
     )
 
+    combo_beats = sorted(beat for _cat, _crit, beat in events)
+
     skills = []
     for note in score.notes:
         if type(note).__name__ != "HolodoriSkill":
@@ -78,9 +81,15 @@ def chart_metadata(
             str(k): _tally(events, sec_window=(start, start + k), timeline=timeline)
             for k in _SKILL_BUCKETS
         }
-        skills.append({"skill_slot_no": note.slot, "counts": buckets})
+        skills.append(
+            {
+                "skill_slot_no": note.slot,
+                "skill_starts_at_combo": bisect.bisect_left(combo_beats, note.beat),
+                "counts": buckets,
+            }
+        )
 
-    return {**counts, "fever": fever, "skills": skills}
+    return {**counts, "fever": fever, "total_combo": len(events), "skills": skills}
 
 
 def notes_coefficient(counts: dict[str, int], weights: dict[str, int]) -> float:
@@ -123,16 +132,19 @@ def chart_score_multipliers(
     def in_skill(t: float) -> bool:
         return any(st <= t < st + skill_seconds for st in skill_times)
 
-    total = weighted = 0.0
+    fever = _fever_window(score)
+    total = weighted = weighted_fever = 0.0
     for combo, (cat, _crit, beat) in enumerate(events, start=1):
         w = weights.get(cat, 0) / 1000
         factor = 1 + combo_bonus(combo)
         if in_skill(timeline.time(beat)):
             factor *= skill_multiplier
+        contrib = w * factor
         total += w
-        weighted += w * factor
+        weighted += contrib
+        if fever is not None and fever[0] <= beat < fever[1]:
+            weighted_fever += contrib
     solo = weighted / total if total else 0.0
-    multi_factor = multi_bonus * (
-        1 + fever_bonus if _fever_window(score) is not None else 1
-    )
-    return {"solo": solo, "multi": solo * multi_factor}
+    fever_share = weighted_fever / total if total else 0.0
+    multi = solo + (1 + fever_bonus) * multi_bonus * fever_share
+    return {"solo": solo, "multi": multi}
