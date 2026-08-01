@@ -16,29 +16,6 @@ _CATS = (
     "long_relays",
     "long_continuations",
 )
-_KEYS = tuple(k for c in _CATS for k in (c, "critical_" + c))
-_SKILL_BUCKETS = range(5, 16)
-
-_Event = tuple[str, bool, float]
-
-
-def _tally(
-    events: list[_Event],
-    *,
-    beat_window: tuple[float, float] | None = None,
-    sec_window: tuple[float, float] | None = None,
-    timeline: _Timeline | None = None,
-) -> dict[str, int]:
-    counts = {k: 0 for k in _KEYS}
-    for cat, crit, beat in events:
-        if beat_window is not None and not (beat_window[0] <= beat < beat_window[1]):
-            continue
-        if sec_window is not None and timeline is not None:
-            t = timeline.time(beat)
-            if not (sec_window[0] <= t < sec_window[1]):
-                continue
-        counts[("critical_" if crit else "") + cat] += 1
-    return counts
 
 
 def _timeline(score: Score, bar_lengths: list[tuple[int, float]]) -> _Timeline:
@@ -56,40 +33,40 @@ def _fever_window(score: Score) -> tuple[float, float] | None:
     return (fs, fe) if fs is not None and fe is not None else None
 
 
+def _note_list(score: Score, timeline: _Timeline) -> list[tuple[str, float]]:
+    # every note as (type, time_seconds), time-ordered - the single source of truth for
+    # scoring. critical variants keep a "critical_" prefix; they share the base weight.
+    return sorted(
+        (
+            (("critical_" if crit else "") + cat, timeline.time(beat))
+            for cat, crit, beat in score.combo_events()
+        ),
+        key=lambda n: n[1],
+    )
+
+
 def chart_metadata(
     score: Score, bar_lengths: list[tuple[int, float]]
 ) -> dict[str, Any]:
+    # note list (type + time) + skill fire times drive the calculation; counts/combo are all
+    # derivable from these, so nothing is precomputed. two notes on the same tick no longer
+    # confuse combo-based windows, since scoring keys off exact per-note times.
     timeline = _timeline(score, bar_lengths)
-    events: list[_Event] = list(score.combo_events())
+    notes = _note_list(score, timeline)
+    combo_beats = sorted(beat for _cat, _crit, beat in score.combo_events())
 
-    counts = _tally(events)
-    fever_window = _fever_window(score)
-    fever = (
-        _tally(events, beat_window=fever_window)
-        if fever_window
-        else {k: 0 for k in _KEYS}
-    )
-
-    combo_beats = sorted(beat for _cat, _crit, beat in events)
-
-    skills = []
-    for note in score.notes:
-        if type(note).__name__ != "HolodoriSkill":
-            continue
-        start = timeline.time(note.beat)
-        buckets = {
-            str(k): _tally(events, sec_window=(start, start + k), timeline=timeline)
-            for k in _SKILL_BUCKETS
+    skills = [
+        {
+            "skill_slot_no": note.slot,
+            "time": round(timeline.time(note.beat), 6),
+            # display only; may shift by a note when several land on the same beat
+            "skill_starts_at_combo": bisect.bisect_left(combo_beats, note.beat),
         }
-        skills.append(
-            {
-                "skill_slot_no": note.slot,
-                "skill_starts_at_combo": bisect.bisect_left(combo_beats, note.beat),
-                "counts": buckets,
-            }
-        )
+        for note in score.notes
+        if type(note).__name__ == "HolodoriSkill"
+    ]
 
-    return {**counts, "fever": fever, "total_combo": len(events), "skills": skills}
+    return {"notes": [[typ, round(t, 6)] for typ, t in notes], "skills": skills}
 
 
 def notes_coefficient(counts: dict[str, int], weights: dict[str, int]) -> float:
@@ -111,14 +88,18 @@ def chart_score_multipliers(
     skill_seconds: float = 9.0,
     skill_multiplier: float = 2.0,
 ) -> dict[str, float]:
+    # main meta file: built from the same time-ordered note list as the per-chart metadata,
+    # so combo (per-note, sequential) and skill windows (by time) are tie-safe.
     timeline = _timeline(score, bar_lengths)
-    events = sorted(score.combo_events(), key=lambda e: e[2])
+    notes = _note_list(score, timeline)
     skill_times = sorted(
         timeline.time(n.beat)
         for n in score.notes
         if type(n).__name__ == "HolodoriSkill"
     )
     thresholds = sorted(combo_curve)
+    fever = _fever_window(score)
+    fever_times = (timeline.time(fever[0]), timeline.time(fever[1])) if fever else None
 
     def combo_bonus(combo: int) -> float:
         permil = 0
@@ -132,17 +113,17 @@ def chart_score_multipliers(
     def in_skill(t: float) -> bool:
         return any(st <= t < st + skill_seconds for st in skill_times)
 
-    fever = _fever_window(score)
     total = weighted = weighted_fever = 0.0
-    for combo, (cat, _crit, beat) in enumerate(events, start=1):
-        w = weights.get(cat, 0) / 1000
+    for combo, (typ, t) in enumerate(notes, start=1):
+        base = typ[9:] if typ.startswith("critical_") else typ
+        w = weights.get(base, 0) / 1000
         factor = 1 + combo_bonus(combo)
-        if in_skill(timeline.time(beat)):
+        if in_skill(t):
             factor *= skill_multiplier
         contrib = w * factor
         total += w
         weighted += contrib
-        if fever is not None and fever[0] <= beat < fever[1]:
+        if fever_times is not None and fever_times[0] <= t < fever_times[1]:
             weighted_fever += contrib
     solo = weighted / total if total else 0.0
     fever_share = weighted_fever / total if total else 0.0
