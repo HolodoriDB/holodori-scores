@@ -4,6 +4,7 @@ import bisect
 from typing import Any
 
 from sonolus_converters.notes.score import Score
+from sonolus_converters.notes.slide import Slide, SlideRelayPoint
 
 from .render import _Timeline
 
@@ -86,6 +87,19 @@ def chart_metadata(
     }
 
 
+def _invisible_tick_count(score: Score) -> int:
+    # LongRelayDeActive points: hidden slide ticks (SlideRelayPoint with critical=None) that never
+    # combo or score. together with the dropped bezier ticks the game still counts them in the live
+    # score's perfect-coefficient sum, so the scorer has to reproduce that.
+    return sum(
+        1
+        for note in score.notes
+        if isinstance(note, Slide)
+        for conn in note.connections
+        if isinstance(conn, SlideRelayPoint) and conn.critical is None
+    )
+
+
 def notes_coefficient(counts: dict[str, int], weights: dict[str, int]) -> float:
     permil = sum(
         weights.get(c, 0) * (counts.get(c, 0) + counts.get("critical_" + c, 0))
@@ -104,6 +118,7 @@ def chart_score_multipliers(
     multi_bonus: float,
     skill_seconds: float = 9.0,
     skill_multiplier: float = 2.0,
+    bezier_ticks: int = 0,
 ) -> dict[str, float]:
     # main meta file: built from the same time-ordered note list as the per-chart metadata,
     # so combo (per-note, sequential) and skill windows (by time) are tie-safe.
@@ -142,6 +157,10 @@ def chart_score_multipliers(
         weighted += contrib
         if fever_times is not None and fever_times[0] <= t < fever_times[1]:
             weighted_fever += contrib
+    # bezier + invisible ticks never combo or score, but the game (buggily) counts each as a 0.1
+    # tick in the perfect-coefficient sum. add them to the divisor ONLY - they dilute the score
+    # without contributing to any note, so they never touch `weighted`/`weighted_fever`.
+    total += 0.1 * (bezier_ticks + _invisible_tick_count(score))
     solo = weighted / total if total else 0.0
     fever_share = weighted_fever / total if total else 0.0
     multi = solo + (1 + fever_bonus) * multi_bonus * fever_share

@@ -278,15 +278,24 @@ def _read_text(source: _Source) -> str:
     return data.decode("utf-8") if isinstance(data, bytes) else data
 
 
-def load_sus(file: _Source) -> tuple[Score, list[tuple[int, float]]]:
+def load_sus(
+    file: _Source, *, count_bezier: bool = False
+) -> "tuple[Score, list[tuple[int, float]]] | tuple[Score, list[tuple[int, float]], int]":
     """
-    Only supports holodori-style sus files
+    Only supports holodori-style sus files. With count_bezier=True the third return value is the
+    number of dropped bezier ticks (needed for the live score's perfect-coefficient sum).
     """
     import sonolus_converters
 
     text = _read_text(file)
+    bars = _parse_bar_lengths(text)
+    if count_bezier:
+        score, bezier = sonolus_converters.holodori_sus.load(
+            io.StringIO(text), count_bezier=True
+        )
+        return score, bars, bezier
     score = sonolus_converters.holodori_sus.load(io.StringIO(text))
-    return score, _parse_bar_lengths(text)
+    return score, bars
 
 
 def _row1(y: int) -> int:
