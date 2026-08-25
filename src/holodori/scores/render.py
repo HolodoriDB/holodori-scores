@@ -1420,5 +1420,51 @@ class ChartRenderer:
             )
 
 
+def chart_layout(
+    score: Score, bar_lengths: list[tuple[int, float]]
+) -> dict[str, typing.Any]:
+    """Pixel layout of the rendered chart (uniform layout only, which the backend always uses),
+    so a client can overlay boxes/markers on the served PNG by mapping time -> bar -> pixel.
+
+    Must stay in sync with ``ChartRenderer.render()``'s column math (the constants and the
+    ``n_bars``/``n_cols`` derivation below mirror it). Note placement is, for a note at bar ``b``,
+    column ``c = b // SENTENCE_LENGTH``, ``b_local = b - c*SENTENCE_LENGTH``:
+        y_center = MEASURE_HEIGHT*(SENTENCE_LENGTH - b_local) + 2*TIME_PADDING
+        x_center = 2*LANE_PADDING + c*sentence_w + LANE_WIDTH*(lane - 2 + note_width/2)
+    Time -> bar comes from the ``bars``/``bpms`` breakpoints (invert ``time``, then ``bar_of_beat``).
+    """
+    bpms = [(n.beat, n.bpm) for n in score.notes if type(n).__name__ == "Bpm"]
+    timeline = _Timeline(bpms, bar_lengths)
+    last_bar = 0.0
+    for note in score.notes:
+        if isinstance(note, Single):
+            last_bar = max(last_bar, timeline.bar_of_beat(note.beat))
+        elif isinstance(note, Slide):
+            for connection in note.connections:
+                last_bar = max(last_bar, timeline.bar_of_beat(connection.beat))
+    n_bars = math.ceil(last_bar)
+    n_cols = max(1, math.ceil(n_bars / SENTENCE_LENGTH))
+    chart_h = round(MEASURE_HEIGHT * SENTENCE_LENGTH + TIME_PADDING * 2)
+    sentence_w = round(LANE_WIDTH * N_LANES + LANE_PADDING * 2)
+    total_w = sentence_w * n_cols + LANE_PADDING * 2
+    total_h = chart_h + TIME_PADDING * 2 + META_SIZE + TIME_PADDING * 2
+    return {
+        "measureHeight": MEASURE_HEIGHT,
+        "timePadding": TIME_PADDING,
+        "lanePadding": LANE_PADDING,
+        "laneWidth": LANE_WIDTH,
+        "nLanes": N_LANES,
+        "sentenceLength": SENTENCE_LENGTH,
+        "sentenceW": sentence_w,
+        "metaSize": META_SIZE,
+        "chartH": chart_h,
+        "nCols": n_cols,
+        "totalW": total_w,
+        "totalH": total_h,
+        "bars": [[m, length, sb] for (m, length, sb) in timeline.bars],
+        "bpms": [[b, bpm, el] for (b, bpm, el) in timeline.bpms],
+    }
+
+
 def render_score(score: Score, **kwargs) -> Image.Image:
     return ChartRenderer(score, **kwargs).render()

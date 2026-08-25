@@ -6,7 +6,7 @@ from typing import Any
 from sonolus_converters.notes.score import Score
 from sonolus_converters.notes.slide import Slide, SlideRelayPoint
 
-from .render import _Timeline
+from .render import _Timeline, chart_layout
 
 _CATS = (
     "taps",
@@ -84,6 +84,8 @@ def chart_metadata(
             if fever
             else None
         ),
+        # pixel layout of the rendered PNG, so a client can place overlays on it (time -> pixel)
+        "layout": chart_layout(score, bar_lengths),
     }
 
 
