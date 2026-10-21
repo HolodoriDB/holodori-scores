@@ -1,6 +1,6 @@
 """Render a sonolus-level-converters Score to a chart PNG.
 
-The renderer consumes ``sonolus_converters.notes.score.Score`` objects directly
+The renderer consumes ``rg_converters.core.score.Score`` objects directly
 and paints with Pillow + NumPy. Only the note types and attributes the chart
 view draws are supported: Bpm, TimeScaleGroup (speed lines), Single, Slide,
 Guide, Skill and Fever markers. speedRatio, timeScaleGroup assignment, Volume
@@ -19,24 +19,24 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from sonolus_converters.notes.bpm import Bpm
-from sonolus_converters.notes.guide import Guide
-from sonolus_converters.notes.holodorievents import (
+from rg_converters.core.bpm import Bpm
+from rg_converters.core.guide import Guide
+from rg_converters.core.holodorievents import (
     HolodoriChargeEnd,
     HolodoriChargeStart,
     HolodoriFeverEnd,
     HolodoriFeverStart,
     HolodoriSkill,
 )
-from sonolus_converters.notes.score import Score
-from sonolus_converters.notes.single import FeverChance, FeverStart, Single, Skill
-from sonolus_converters.notes.slide import (
+from rg_converters.core.score import Score
+from rg_converters.core.single import FeverChance, FeverStart, Single, Skill
+from rg_converters.core.slide import (
     Slide,
     SlideEndPoint,
     SlideRelayPoint,
     SlideStartPoint,
 )
-from sonolus_converters.notes.timescale import TimeScaleGroup
+from rg_converters.core.timescale import TimeScaleGroup
 
 __all__ = ["ChartRenderer", "render_score", "load_sus"]
 
@@ -285,16 +285,16 @@ def load_sus(
     Only supports holodori-style sus files. With count_bezier=True the third return value is the
     number of dropped bezier ticks (needed for the live score's perfect-coefficient sum).
     """
-    import sonolus_converters
+    import rg_converters
 
     text = _read_text(file)
     bars = _parse_bar_lengths(text)
     if count_bezier:
-        score, bezier = sonolus_converters.holodori_sus.load(
+        score, bezier = rg_converters.converters.holodori_sus.load(
             io.StringIO(text), count_bezier=True
         )
         return score, bars, bezier
-    score = sonolus_converters.holodori_sus.load(io.StringIO(text))
+    score = rg_converters.converters.holodori_sus.load(io.StringIO(text))
     return score, bars
 
 

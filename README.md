@@ -28,7 +28,7 @@ from holodori.scores import ChartRenderer, load_sus
 score, bar_lengths = load_sus('1.sus')
 
 renderer = ChartRenderer(
-    score,                # a sonolus_converters Score
+    score,                # a rg_converters Score
     title='Tell Your World',
     difficulty='master',
     jacket='jacket.png',  # path or http(s) url, optional
@@ -37,7 +37,7 @@ renderer = ChartRenderer(
 renderer.render().save('1.png')  # render() returns a PIL.Image
 ```
 
-Any `sonolus_converters` `Score` works as input. Only the note types the chart
+Any `rg_converters` `Score` works as input. Only the note types the chart
 view draws are supported: BPM changes, time scale changes (drawn as speed
 lines), singles, slides, guides, and skill/fever markers.
 

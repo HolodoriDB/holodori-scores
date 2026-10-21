@@ -3,8 +3,8 @@ from __future__ import annotations
 import bisect
 from typing import Any
 
-from sonolus_converters.notes.score import Score
-from sonolus_converters.notes.slide import Slide, SlideRelayPoint
+from rg_converters.core.score import Score
+from rg_converters.core.slide import Slide, SlideRelayPoint
 
 from .render import _Timeline, chart_layout
 
