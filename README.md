@@ -1,7 +1,7 @@
 # hololive Dreams Scores
 
 Renders holodori music scores to chart images (PNG). Takes a
-[sonolus-level-converters](https://github.com/UntitledCharts/sonolus-level-converters)
+[rg_converters](https://pypi.org/project/rg-converters/) (3.0 or newer)
 `Score` object as input, with loaders included for holodori-style `.sus` files
 
 ## Installation

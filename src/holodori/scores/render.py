@@ -285,16 +285,13 @@ def load_sus(
     Only supports holodori-style sus files. With count_bezier=True the third return value is the
     number of dropped bezier ticks (needed for the live score's perfect-coefficient sum).
     """
-    import rg_converters
+    from rg_converters.format import holodori_sus
 
     text = _read_text(file)
     bars = _parse_bar_lengths(text)
+    score = holodori_sus.loads(text)
     if count_bezier:
-        score, bezier = rg_converters.converters.holodori_sus.load(
-            io.StringIO(text), count_bezier=True
-        )
-        return score, bars, bezier
-    score = rg_converters.converters.holodori_sus.load(io.StringIO(text))
+        return score, bars, score.format_metadata["bezier_count"]
     return score, bars
 
 
