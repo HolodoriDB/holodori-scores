@@ -44,6 +44,16 @@ _ASSETS = Path(__file__).parent / "assets"
 _FONT_MEDIUM = _ASSETS / "NotoSansCJKEx-Medium.otf"
 _FONT_BLACK = _ASSETS / "NotoSansCJKEx-Black.otf"
 
+# per-language title faces. the base CJK Ex face is simplified-oriented and does NOT carry the
+# correct regional forms for Japanese / Traditional Chinese, nor hangul at all, so those languages
+# each render with their own Noto face (same stack the website serves via :lang()). eng / ind /
+# chs stay on the base face. keyed by the 3-letter masterdata language code, (medium, black).
+_LANG_FONTS: dict[str, tuple[str, str]] = {
+    "jpn": ("NotoSansJP-Medium.otf", "NotoSansJP-Black.otf"),
+    "cht": ("NotoSansTC-Medium.otf", "NotoSansTC-Black.otf"),
+    "kor": ("NotoSansKR-Medium.otf", "NotoSansKR-Black.otf"),
+}
+
 LANE_WIDTH = 16
 MEASURE_HEIGHT = (
     440  # px per measure (default uniform layout: every measure is the same height)
@@ -364,6 +374,7 @@ class ChartRenderer:
         time_based: bool = False,
         gray_offbeat: bool = True,
         bar_lengths: list[tuple[int, float]] | None = None,
+        lang: str | None = None,
     ):
         self.title = title if title is not None else score.metadata.title
         self.artist = artist if artist is not None else score.metadata.artist
@@ -373,6 +384,8 @@ class ChartRenderer:
         self.chart_id = chart_id
         self.time_based = time_based
         self.gray_offbeat = gray_offbeat
+        # title/label font face: the regional Noto for jpn/cht/kor, else the base CJK Ex face
+        self.lang = lang
 
         self._images: dict[str, Image.Image | None] = {}
         self._text_tiles: dict[tuple, tuple[Image.Image, int, int, float, int, int]] = (
@@ -598,7 +611,11 @@ class ChartRenderer:
         return font.getlength(text)
 
     def _font(self, size: int, weight: int) -> ImageFont.FreeTypeFont:
-        file = str(_FONT_BLACK if weight >= 900 else _FONT_MEDIUM)
+        faces = _LANG_FONTS.get(self.lang or "")
+        if faces is not None:
+            file = str(_ASSETS / faces[1 if weight >= 900 else 0])
+        else:
+            file = str(_FONT_BLACK if weight >= 900 else _FONT_MEDIUM)
         key = (file, size)
         if key not in _FONT_CACHE:
             _FONT_CACHE[key] = ImageFont.truetype(file, size)
