@@ -94,24 +94,19 @@ NOTE_TEX = {
     "gray": "note_gray.png",  # normal taps that don't land on the 8th-note grid
 }
 # holodori marks both ends of the charge and fever windows; the sekai types are also accepted
+# keyed by the event CLASS, not by `<Class>.type`: across rg_converters versions `.type` is an
+# instance property, so `SomeClass.type` is the property object (not the string), and a lookup by
+# an instance's `.type` string then KeyErrors. keying on the class (looked up via type(note)) is
+# version-proof and never crashes a chart that uses these fever/charge markers.
 _EVENT_LABELS = {
-    HolodoriChargeStart.type: "FEVER CHARGE START",
-    HolodoriChargeEnd.type: "FEVER CHARGE END",
-    HolodoriFeverStart.type: "FEVER START",
-    HolodoriFeverEnd.type: "FEVER END",
-    Skill.type: "SKILL",
-    FeverChance.type: "FEVER CHANCE!",
-    FeverStart.type: "SUPER FEVER!!",
+    HolodoriChargeStart: "FEVER CHARGE START",
+    HolodoriChargeEnd: "FEVER CHARGE END",
+    HolodoriFeverStart: "FEVER START",
+    HolodoriFeverEnd: "FEVER END",
+    Skill: "SKILL",
+    FeverChance: "FEVER CHANCE!",
+    FeverStart: "SUPER FEVER!!",
 }
-_EVENT_TYPES = (
-    HolodoriChargeStart,
-    HolodoriChargeEnd,
-    HolodoriFeverStart,
-    HolodoriFeverEnd,
-    Skill,
-    FeverChance,
-    FeverStart,
-)
 
 _APOSTROPHES = str.maketrans({"‘": "'", "’": "'", "＇": "'"})
 
@@ -409,8 +404,8 @@ class ChartRenderer:
                         previous = point.timeScale
             elif isinstance(note, HolodoriSkill):
                 texts.append((note.beat, "SPECIAL SKILL %d" % note.slot))
-            elif isinstance(note, _EVENT_TYPES):
-                texts.append((note.beat, _EVENT_LABELS[note.type]))
+            elif type(note) in _EVENT_LABELS:
+                texts.append((note.beat, _EVENT_LABELS[type(note)]))
             elif isinstance(note, Single):
                 self.singles.append(
                     _Single(
